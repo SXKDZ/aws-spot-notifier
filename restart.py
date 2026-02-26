@@ -57,34 +57,32 @@ This is an automated message from the Spot Instance Startup Monitor.
     return send_email(subject, body)
 
 
-def run_custom_script():
-    """Run the specified script after startup."""
-    if not os.path.exists(SCRIPT_TO_RUN):
-        logger.error(f"Custom script not found at {SCRIPT_TO_RUN}")
+def run_script(script_path, label="script"):
+    """Run a script as a detached process."""
+    if not os.path.exists(script_path):
+        logger.info(f"{label} not found at {script_path}, skipping")
         return False
 
-    if not os.access(SCRIPT_TO_RUN, os.X_OK):
-        logger.warning(
-            f"Script is not executable, attempting to make it executable: {SCRIPT_TO_RUN}"
-        )
+    if not os.access(script_path, os.X_OK):
+        logger.warning(f"{label} is not executable, attempting to fix: {script_path}")
         try:
-            os.chmod(SCRIPT_TO_RUN, 0o755)
+            os.chmod(script_path, 0o755)
         except Exception as e:
-            logger.error(f"Failed to make script executable: {e}")
+            logger.error(f"Failed to make {label} executable: {e}")
             return False
 
     try:
-        logger.info(f"Running custom script as detached process: {SCRIPT_TO_RUN}")
+        logger.info(f"Running {label}: {script_path}")
         process = subprocess.Popen(
-            [SCRIPT_TO_RUN],
+            [script_path],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             preexec_fn=os.setsid,
         )
-        logger.info(f"Custom script launched successfully with PID: {process.pid}")
+        logger.info(f"{label} launched successfully with PID: {process.pid}")
         return True
     except subprocess.SubprocessError as e:
-        logger.error(f"Failed to launch custom script: {e}")
+        logger.error(f"Failed to launch {label}: {e}")
         return False
 
 
@@ -123,8 +121,16 @@ def main():
     if not send_startup_email(instance_info):
         logger.warning("Failed to send startup email notification")
 
-    if not run_custom_script():
-        logger.warning("Custom script execution failed")
+    # Run the default monitoring script (script.sh)
+    if not run_script(SCRIPT_TO_RUN, "monitoring script"):
+        logger.warning("Monitoring script execution failed")
+
+    # Run user's custom restart commands if user_script.sh exists
+    app_dir = os.path.dirname(os.path.abspath(__file__))
+    user_script = os.path.join(app_dir, "user_script.sh")
+    if os.path.exists(user_script):
+        if not run_script(user_script, "user script"):
+            logger.warning("User script execution failed")
 
     logger.info("Spot instance startup processing complete")
     return 0

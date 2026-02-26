@@ -252,41 +252,39 @@ The system can automatically run your custom commands after each spot instance r
 - Launching Jupyter notebooks
 - Sending notifications to Slack/Discord
 
+### How It's Organized
+
+- **`script.sh`** — Starts the termination monitor (`notice_monitor`). Runs automatically. **Do not modify.**
+- **`user_script.sh`** — Your custom commands. Runs automatically if the file exists. **Edit this one.**
+
+Both scripts run on restart. `script.sh` handles monitoring; `user_script.sh` handles your work.
+
 ### Setting Up Custom Commands
 
-1. **Edit the user script**:
+1. **Copy the template**:
+```bash
+cp /opt/aws-spot-notifier/user_script.sh.template /opt/aws-spot-notifier/user_script.sh
+chmod +x /opt/aws-spot-notifier/user_script.sh
+```
+
+2. **Edit the script and add your commands**:
 ```bash
 vi /opt/aws-spot-notifier/user_script.sh
 ```
 
-2. **Add your commands**. The template includes examples:
+Example:
 ```bash
-# Mount additional volumes
-sudo mount /dev/xvdf1 /mnt/data
-
 # Resume ML training
 cd /home/ec2-user/my-project
-screen -dmS training python train.py --resume-from-checkpoint
-
-# Start Jupyter
-cd /home/ec2-user/notebooks
-nohup jupyter lab --ip=0.0.0.0 --port=8888 &
-
-# Start Docker containers
-docker start my-container
+screen -dmS server bash -c 'python3 -m tools.tool_server base_port=8100 num_instances=16'
+sleep 5
+screen -dmS train bash -c 'KL_COEF=0.00 bash slime_retro/scripts/train.sh'
 ```
 
-3. **Ensure the script is executable**:
-```bash
-chmod +x /opt/aws-spot-notifier/user_script.sh
-```
-
-4. **Update `.env` to point to your script** (if using a different location):
-```bash
-SCRIPT_TO_RUN=/opt/aws-spot-notifier/user_script.sh
-```
-
-The script runs automatically whenever the instance restarts. Default behavior (monitoring for termination) is preserved.
+That's it. On restart, the system will automatically:
+1. Send you an email with new IP addresses
+2. Start the termination monitor (`script.sh`)
+3. Run your custom commands (`user_script.sh`)
 
 ## File Structure
 
@@ -298,8 +296,8 @@ $APP_DIR/
 ├── notice.py             # Termination monitor (runs continuously)
 ├── restart.py            # Startup monitor (runs once on boot)
 ├── register.py           # Service registration tool
-├── script.sh             # Default launcher script
-├── user_script.sh        # Your custom restart commands (created from template)
+├── script.sh             # Starts termination monitor (do not modify)
+├── user_script.sh        # Your custom restart commands (create from template)
 ├── user_script.sh.template # Template with examples for custom commands
 ├── install.sh            # Interactive installer script
 ├── uninstall.sh          # Uninstallation script
