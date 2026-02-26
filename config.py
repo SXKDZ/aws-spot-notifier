@@ -1,7 +1,12 @@
 import os
-import requests
+import time
 import logging
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from pathlib import Path
+
+import requests
 from dotenv import load_dotenv
 
 # Load environment variables from .env file next to this module
@@ -71,3 +76,69 @@ def get_instance_metadata(token, url):
             return "Unknown"
     except requests.exceptions.RequestException:
         return "Unknown"
+
+
+def send_email(subject, body, max_retries=3, retry_delay=5):
+    """Send an email to all configured recipients with retry logic.
+
+    Returns True if at least one recipient was reached.
+    """
+    if not SENDER_EMAIL or not SENDER_PASSWORD:
+        logger.error("Email configuration missing. Cannot send notification.")
+        return False
+
+    if not RECIPIENT_EMAILS:
+        logger.error("No recipient emails configured.")
+        return False
+
+    failed_recipients = []
+
+    for idx, recipient_email in enumerate(RECIPIENT_EMAILS):
+        email_sent = False
+
+        for attempt in range(max_retries):
+            try:
+                msg = MIMEMultipart()
+                msg["From"] = SENDER_EMAIL
+                msg["To"] = recipient_email
+                msg["Subject"] = subject
+                msg.attach(MIMEText(body, "plain"))
+
+                with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=30) as server:
+                    server.starttls()
+                    server.login(SENDER_EMAIL, SENDER_PASSWORD)
+                    server.send_message(msg)
+
+                logger.info(f"[{idx + 1}] Email sent to {recipient_email}")
+                email_sent = True
+                break
+
+            except smtplib.SMTPAuthenticationError as e:
+                logger.error(f"SMTP authentication failed for {recipient_email}: {e}")
+                break  # No point retrying auth errors
+            except smtplib.SMTPServerDisconnected as e:
+                logger.warning(
+                    f"SMTP connection lost for {recipient_email} "
+                    f"(attempt {attempt + 1}/{max_retries}): {e}"
+                )
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to send email to {recipient_email} "
+                    f"(attempt {attempt + 1}/{max_retries}): {e}"
+                )
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+
+        if not email_sent:
+            failed_recipients.append(recipient_email)
+            logger.error(
+                f"Failed to send email to {recipient_email} "
+                f"after {max_retries} attempts"
+            )
+
+    if failed_recipients:
+        logger.warning(f"Failed to send emails to: {', '.join(failed_recipients)}")
+
+    return len(failed_recipients) < len(RECIPIENT_EMAILS)

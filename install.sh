@@ -5,6 +5,12 @@
 
 set -e
 
+# When piped through curl|bash, stdin is the script itself.
+# Redirect all interactive reads from the terminal.
+if [ ! -t 0 ]; then
+    exec < /dev/tty
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -43,24 +49,26 @@ prompt_with_default() {
     local prompt="$1"
     local default="$2"
     local var_name="$3"
+    local response
 
     echo -ne "${BLUE}?${NC} $prompt [$default]: "
     read -r response
     if [ -z "$response" ]; then
-        eval "$var_name='$default'"
+        printf -v "$var_name" '%s' "$default"
     else
-        eval "$var_name='$response'"
+        printf -v "$var_name" '%s' "$response"
     fi
 }
 
 prompt_password() {
     local prompt="$1"
     local var_name="$2"
+    local response
 
     echo -ne "${BLUE}?${NC} $prompt: "
     read -rs response
     echo
-    eval "$var_name='$response'"
+    printf -v "$var_name" '%s' "$response"
 }
 
 detect_os() {
@@ -94,13 +102,21 @@ install_dependencies() {
 check_aws_instance() {
     print_info "Checking if running on AWS EC2..."
 
-    if curl -s -m 2 http://169.254.169.254/latest/meta-data/ >/dev/null 2>&1; then
-        INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
-        INSTANCE_TYPE=$(curl -s http://169.254.169.254/latest/meta-data/instance-type)
+    # Use IMDSv2 token-based authentication
+    local token
+    token=$(curl -s -m 2 -X PUT "http://169.254.169.254/latest/api/token" \
+        -H "X-aws-ec2-metadata-token-ttl-seconds: 60" 2>/dev/null) || true
+
+    if [ -n "$token" ]; then
+        local imds_header="X-aws-ec2-metadata-token: $token"
+        INSTANCE_ID=$(curl -s -H "$imds_header" http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null)
+        INSTANCE_TYPE=$(curl -s -H "$imds_header" http://169.254.169.254/latest/meta-data/instance-type 2>/dev/null)
         print_success "Running on AWS EC2 instance: $INSTANCE_ID ($INSTANCE_TYPE)"
 
         # Check if it's a spot instance
-        if curl -s http://169.254.169.254/latest/meta-data/spot/ >/dev/null 2>&1; then
+        local lifecycle
+        lifecycle=$(curl -s -H "$imds_header" http://169.254.169.254/latest/meta-data/instance-life-cycle 2>/dev/null) || true
+        if [ "$lifecycle" = "spot" ]; then
             print_success "This is a Spot instance - perfect!"
         else
             print_info "This is not a Spot instance - notifications will only work on Spot instances"
@@ -129,7 +145,7 @@ setup_application() {
     fi
 
     # Set proper ownership
-    sudo chown -R $(whoami):$(whoami) "$APP_DIR"
+    sudo chown -R "$(whoami):$(whoami)" "$APP_DIR"
 
     print_success "Application files ready"
 }
@@ -223,23 +239,19 @@ test_setup() {
     # Test email configuration
     print_info "Testing email configuration..."
     python3 -c "
-import smtplib
-from email.mime.text import MIMEText
-import os
-from dotenv import load_dotenv
-
-load_dotenv('$APP_DIR/.env')
+import smtplib, sys
+sys.path.insert(0, '$APP_DIR')
+from config import SMTP_SERVER, SMTP_PORT, SENDER_EMAIL, SENDER_PASSWORD
 
 try:
-    server = smtplib.SMTP(os.getenv('SMTP_SERVER'), int(os.getenv('SMTP_PORT')))
+    server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
     server.starttls()
-    server.login(os.getenv('SENDER_EMAIL'), os.getenv('SENDER_PASSWORD'))
+    server.login(SENDER_EMAIL, SENDER_PASSWORD)
     server.quit()
     print('Email configuration is valid')
-    exit(0)
 except Exception as e:
     print(f'Email configuration error: {e}')
-    exit(1)
+    sys.exit(1)
 " && print_success "Email configuration verified" || print_error "Email configuration failed - please check credentials"
 
     # Check if monitoring is running
@@ -273,11 +285,11 @@ print_completion() {
     echo -e "${GREEN}✓${NC} AWS Spot Instance Notification System has been installed successfully!"
     echo
     echo -e "${YELLOW}Important Commands:${NC}"
-    echo "  • Check service status:    python3 $APP_DIR/register.py status"
+    echo "  • Check service status:     python3 $APP_DIR/register.py status"
     echo "  • View monitor logs:        screen -r notice_monitor"
     echo "  • Check startup logs:       sudo journalctl -u spot-startup -n 50"
     echo "  • Edit configuration:       vi $APP_DIR/.env"
-    echo "  • Uninstall:               $APP_DIR/uninstall.sh"
+    echo "  • Uninstall:                $APP_DIR/uninstall.sh"
     echo
     echo -e "${YELLOW}What happens next:${NC}"
     echo "  1. The system is now monitoring for spot termination notices"

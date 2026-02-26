@@ -10,7 +10,7 @@ SSH into your EC2 instance and run:
 curl -sSL https://raw.githubusercontent.com/SXKDZ/aws-spot-notifier/main/install.sh | bash
 ```
 
-This interactive installer will guide you through the entire setup process. See [INSTALL_ONELINER.md](INSTALL_ONELINER.md) for detailed installation options.
+This interactive installer will guide you through the entire setup process.
 
 ## Features
 

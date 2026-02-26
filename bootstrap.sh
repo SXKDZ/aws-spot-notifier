@@ -21,7 +21,7 @@ echo -e "${GREEN}Downloading AWS Spot Instance Notification System installer...$
 
 # Create temp file
 TEMP_INSTALLER=$(mktemp /tmp/aws-spot-installer.XXXXXX.sh)
-trap "rm -f $TEMP_INSTALLER" EXIT
+trap 'rm -f "$TEMP_INSTALLER"' EXIT
 
 # Download with curl or wget
 if command -v curl >/dev/null 2>&1; then

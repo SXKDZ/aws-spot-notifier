@@ -38,7 +38,7 @@ main() {
     print_header
 
     # Determine app directory
-    if [ -n "$1" ]; then
+    if [ -n "${1:-}" ]; then
         APP_DIR="$1"
     elif [ -d "$DEFAULT_APP_DIR" ]; then
         APP_DIR="$DEFAULT_APP_DIR"
@@ -110,7 +110,7 @@ main() {
     echo
     print_success "AWS Spot Instance Notification System has been uninstalled successfully!"
 
-    if [ -n "$BACKUP_FILE" ]; then
+    if [ -n "${BACKUP_FILE:-}" ]; then
         echo
         echo -e "${YELLOW}Note:${NC} Your configuration has been backed up to:"
         echo "  $BACKUP_FILE"
