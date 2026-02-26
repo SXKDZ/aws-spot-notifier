@@ -91,7 +91,7 @@ check_python() {
     if ! /usr/bin/python3 -m pip --version >/dev/null 2>&1; then
         print_error "pip not available for /usr/bin/python3"
         print_info "Installing pip..."
-        curl -sS https://bootstrap.pypa.io/get-pip.py | /usr/bin/python3
+        curl -sS https://bootstrap.pypa.io/get-pip.py | sudo /usr/bin/python3
     fi
 }
 
@@ -229,14 +229,13 @@ install_python_deps() {
 
     cd "$APP_DIR"
 
-    # The systemd service uses /usr/bin/python3, so we must install packages for that exact Python
-    # to avoid version mismatches
+    # The systemd service runs as root, so we need to install packages system-wide with sudo
     if [ -x /usr/bin/python3 ]; then
         print_info "Installing for system Python (/usr/bin/python3)..."
-        /usr/bin/python3 -m pip install -r requirements.txt 2>&1 | tail -5
+        sudo /usr/bin/python3 -m pip install -r requirements.txt 2>&1 | tail -5
     else
         print_info "Installing with default pip3..."
-        pip3 install -r requirements.txt 2>&1 | tail -5
+        sudo pip3 install -r requirements.txt 2>&1 | tail -5
     fi
 
     print_success "Python dependencies installed"
@@ -264,9 +263,9 @@ test_setup() {
     echo "═══════════════════════════════════════════════════════════════"
     echo
 
-    # Test email configuration
+    # Test email configuration (run as root like systemd service does)
     print_info "Testing email configuration..."
-    /usr/bin/python3 -c "
+    sudo /usr/bin/python3 -c "
 import smtplib, sys
 sys.path.insert(0, '$APP_DIR')
 from config import SMTP_SERVER, SMTP_PORT, SENDER_EMAIL, SENDER_PASSWORD
