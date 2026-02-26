@@ -1,9 +1,7 @@
 #!/bin/bash
 
 # AWS Spot Instance Email Notification System - Interactive Installer
-# Run with: bash -c "$(curl -sSL https://raw.githubusercontent.com/SXKDZ/aws-spot-notifier/main/install.sh)"
-
-{ # this ensures the entire script is downloaded before execution
+# Run with: curl -sSL https://raw.githubusercontent.com/SXKDZ/aws-spot-notifier/main/install.sh -o /tmp/spot-install.sh && bash /tmp/spot-install.sh
 
 # Colors for output
 RED='\033[0;31m'
@@ -46,7 +44,7 @@ prompt_with_default() {
     local response
 
     echo -ne "${BLUE}?${NC} $prompt [$default]: "
-    read -r response < /dev/tty
+    read -r response
     if [ -z "$response" ]; then
         printf -v "$var_name" '%s' "$default"
     else
@@ -60,7 +58,7 @@ prompt_password() {
     local response
 
     echo -ne "${BLUE}?${NC} $prompt: "
-    read -rs response < /dev/tty
+    read -rs response
     echo
     printf -v "$var_name" '%s' "$response"
 }
@@ -81,16 +79,16 @@ install_dependencies() {
 
     if [[ "$OS_FAMILY" == *"rhel"* ]] || [[ "$OS" == "amzn" ]]; then
         sudo yum update -y >/dev/null 2>&1 || true
-        sudo yum install -y git screen python3 python3-pip >/dev/null || {
+        if ! sudo yum install -y git screen python3 python3-pip 2>&1; then
             print_error "Failed to install dependencies via yum"
             exit 1
-        }
+        fi
     elif [[ "$OS" == "ubuntu" ]] || [[ "$OS" == "debian" ]]; then
         sudo apt-get update -y >/dev/null 2>&1 || true
-        sudo apt-get install -y git screen python3 python3-pip >/dev/null || {
+        if ! sudo apt-get install -y git screen python3 python3-pip 2>&1; then
             print_error "Failed to install dependencies via apt"
             exit 1
-        }
+        fi
     else
         print_error "Unsupported OS: $OS"
         exit 1
@@ -320,7 +318,7 @@ main() {
     echo
 
     echo -ne "${BLUE}?${NC} Continue with installation? [Y/n]: "
-    read -r CONTINUE < /dev/tty
+    read -r CONTINUE
     if [[ "$CONTINUE" =~ ^[Nn]$ ]]; then
         echo "Installation cancelled."
         exit 0
@@ -344,5 +342,3 @@ main() {
 
 # Run main function
 main "$@"
-
-} # this ensures the entire script is downloaded before execution

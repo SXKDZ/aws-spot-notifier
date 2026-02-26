@@ -7,7 +7,7 @@ Automated email notifications for spot instance termination and restart events.
 SSH into your EC2 instance and run:
 
 ```bash
-bash -c "$(curl -sSL https://raw.githubusercontent.com/SXKDZ/aws-spot-notifier/main/install.sh)"
+curl -sSL https://raw.githubusercontent.com/SXKDZ/aws-spot-notifier/main/install.sh -o /tmp/spot-install.sh && bash /tmp/spot-install.sh
 ```
 
 This interactive installer will guide you through the entire setup process.
@@ -57,13 +57,13 @@ Before running the installer, make sure you have:
 SSH into your EC2 instance and run:
 
 ```bash
-bash -c "$(curl -sSL https://raw.githubusercontent.com/SXKDZ/aws-spot-notifier/main/install.sh)"
+curl -sSL https://raw.githubusercontent.com/SXKDZ/aws-spot-notifier/main/install.sh -o /tmp/spot-install.sh && bash /tmp/spot-install.sh
 ```
 
 Or if you prefer wget:
 
 ```bash
-bash -c "$(wget -qO- https://raw.githubusercontent.com/SXKDZ/aws-spot-notifier/main/install.sh)"
+wget -qO /tmp/spot-install.sh https://raw.githubusercontent.com/SXKDZ/aws-spot-notifier/main/install.sh && bash /tmp/spot-install.sh
 ```
 
 ### Method 2: Review Script First
@@ -88,7 +88,7 @@ By default, the installer uses `/opt/aws-spot-notifier`. You can change this dur
 
 ```bash
 export APP_DIR="/home/ec2-user/spot-notifier"
-bash -c "$(curl -sSL https://raw.githubusercontent.com/SXKDZ/aws-spot-notifier/main/install.sh)"
+curl -sSL https://raw.githubusercontent.com/SXKDZ/aws-spot-notifier/main/install.sh -o /tmp/spot-install.sh && bash /tmp/spot-install.sh
 ```
 
 ### Method 4: Manual Installation
