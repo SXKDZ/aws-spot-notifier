@@ -82,11 +82,17 @@ install_dependencies() {
     print_info "Installing system dependencies..."
 
     if [[ "$OS_FAMILY" == *"rhel"* ]] || [[ "$OS" == "amzn" ]]; then
-        sudo yum update -y >/dev/null 2>&1
-        sudo yum install -y git screen python3 python3-pip >/dev/null 2>&1
+        sudo yum update -y >/dev/null 2>&1 || true
+        sudo yum install -y git screen python3 python3-pip >/dev/null || {
+            print_error "Failed to install dependencies via yum"
+            exit 1
+        }
     elif [[ "$OS" == "ubuntu" ]] || [[ "$OS" == "debian" ]]; then
-        sudo apt-get update -y >/dev/null 2>&1
-        sudo apt-get install -y git screen python3 python3-pip >/dev/null 2>&1
+        sudo apt-get update -y >/dev/null 2>&1 || true
+        sudo apt-get install -y git screen python3 python3-pip >/dev/null || {
+            print_error "Failed to install dependencies via apt"
+            exit 1
+        }
     else
         print_error "Unsupported OS: $OS"
         exit 1
