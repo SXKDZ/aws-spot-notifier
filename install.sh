@@ -5,11 +5,8 @@
 
 set -e
 
-# When piped through curl|bash, stdin is the script itself.
-# Redirect all interactive reads from the terminal.
-if [ ! -t 0 ]; then
-    exec < /dev/tty
-fi
+# When piped through curl|bash, stdin is the script content.
+# Each interactive `read` must individually read from /dev/tty.
 
 # Colors for output
 RED='\033[0;31m'
@@ -52,7 +49,7 @@ prompt_with_default() {
     local response
 
     echo -ne "${BLUE}?${NC} $prompt [$default]: "
-    read -r response
+    read -r response < /dev/tty
     if [ -z "$response" ]; then
         printf -v "$var_name" '%s' "$default"
     else
@@ -66,7 +63,7 @@ prompt_password() {
     local response
 
     echo -ne "${BLUE}?${NC} $prompt: "
-    read -rs response
+    read -rs response < /dev/tty
     echo
     printf -v "$var_name" '%s' "$response"
 }
@@ -320,7 +317,7 @@ main() {
     echo
 
     echo -ne "${BLUE}?${NC} Continue with installation? [Y/n]: "
-    read -r CONTINUE
+    read -r CONTINUE < /dev/tty
     if [[ "$CONTINUE" =~ ^[Nn]$ ]]; then
         echo "Installation cancelled."
         exit 0
