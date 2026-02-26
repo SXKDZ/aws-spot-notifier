@@ -74,6 +74,27 @@ detect_os() {
     fi
 }
 
+check_python() {
+    print_info "Checking Python environment..."
+
+    # Check if /usr/bin/python3 exists (required for systemd service)
+    if [ ! -x /usr/bin/python3 ]; then
+        print_error "/usr/bin/python3 not found - systemd service will not work"
+        exit 1
+    fi
+
+    # Show which Python will be used
+    PYTHON_VERSION=$(/usr/bin/python3 --version 2>&1)
+    print_info "Using Python: $PYTHON_VERSION"
+
+    # Check if pip is available for this Python
+    if ! /usr/bin/python3 -m pip --version >/dev/null 2>&1; then
+        print_error "pip not available for /usr/bin/python3"
+        print_info "Installing pip..."
+        curl -sS https://bootstrap.pypa.io/get-pip.py | /usr/bin/python3
+    fi
+}
+
 install_dependencies() {
     print_info "Installing system dependencies..."
 
@@ -207,7 +228,16 @@ install_python_deps() {
     print_info "Installing Python dependencies..."
 
     cd "$APP_DIR"
-    pip3 install -r requirements.txt >/dev/null 2>&1
+
+    # The systemd service uses /usr/bin/python3, so we must install packages for that exact Python
+    # to avoid version mismatches
+    if [ -x /usr/bin/python3 ]; then
+        print_info "Installing for system Python (/usr/bin/python3)..."
+        /usr/bin/python3 -m pip install -r requirements.txt 2>&1 | tail -5
+    else
+        print_info "Installing with default pip3..."
+        pip3 install -r requirements.txt 2>&1 | tail -5
+    fi
 
     print_success "Python dependencies installed"
 }
@@ -218,8 +248,8 @@ setup_service() {
     cd "$APP_DIR"
     chmod +x "$APP_DIR/script.sh"
 
-    # Register the service
-    python3 register.py register --script-path "$APP_DIR/restart.py" >/dev/null 2>&1
+    # Register the service using the same Python that systemd will use
+    /usr/bin/python3 register.py register --script-path "$APP_DIR/restart.py" >/dev/null 2>&1
 
     # Enable and start the service
     sudo systemctl enable spot-startup >/dev/null 2>&1
@@ -236,7 +266,7 @@ test_setup() {
 
     # Test email configuration
     print_info "Testing email configuration..."
-    python3 -c "
+    /usr/bin/python3 -c "
 import smtplib, sys
 sys.path.insert(0, '$APP_DIR')
 from config import SMTP_SERVER, SMTP_PORT, SENDER_EMAIL, SENDER_PASSWORD
@@ -326,6 +356,7 @@ main() {
 
     echo
     detect_os
+    check_python
     check_aws_instance
 
     echo
