@@ -16,6 +16,7 @@ This interactive installer will guide you through the entire setup process.
 
 - **Termination Alerts**: Sends email when AWS issues spot termination notice (2-minute warning)
 - **Restart Notifications**: Sends email when instance restarts with new IP addresses
+- **Custom Restart Scripts**: Automatically run your commands after restart (resume training, mount drives, etc.)
 - **Auto-Recovery**: Automatically restarts monitoring after each instance reboot
 - **Interactive Setup**: Simple one-line installation with guided configuration
 
@@ -228,6 +229,7 @@ screen -r notice_monitor
 1. **On Instance Start**:
    - `restart.py` runs automatically (systemd service)
    - Sends restart email with new IP addresses
+   - Executes your custom restart commands (if configured)
    - Launches `script.sh`
 
 2. **script.sh**:
@@ -241,20 +243,67 @@ screen -r notice_monitor
 4. **Cycle Repeats**:
    - After instance restart, the process begins again automatically
 
+## 🔧 Customizing Restart Behavior
+
+The system can automatically run your custom commands after each spot instance restart. This is perfect for:
+- Resuming ML training from checkpoints
+- Mounting additional EBS volumes
+- Starting Docker containers
+- Launching Jupyter notebooks
+- Sending notifications to Slack/Discord
+
+### Setting Up Custom Commands
+
+1. **Edit the user script**:
+```bash
+vi /opt/aws-spot-notifier/user_script.sh
+```
+
+2. **Add your commands**. The template includes examples:
+```bash
+# Mount additional volumes
+sudo mount /dev/xvdf1 /mnt/data
+
+# Resume ML training
+cd /home/ec2-user/my-project
+screen -dmS training python train.py --resume-from-checkpoint
+
+# Start Jupyter
+cd /home/ec2-user/notebooks
+nohup jupyter lab --ip=0.0.0.0 --port=8888 &
+
+# Start Docker containers
+docker start my-container
+```
+
+3. **Ensure the script is executable**:
+```bash
+chmod +x /opt/aws-spot-notifier/user_script.sh
+```
+
+4. **Update `.env` to point to your script** (if using a different location):
+```bash
+SCRIPT_TO_RUN=/opt/aws-spot-notifier/user_script.sh
+```
+
+The script runs automatically whenever the instance restarts. Default behavior (monitoring for termination) is preserved.
+
 ## File Structure
 
 ```
 $APP_DIR/
-├── .env_sample         # Sample environment configuration
-├── .env                # Environment configuration
-├── config.py           # Configuration loader and utilities
-├── notice.py           # Termination monitor (runs continuously)
-├── restart.py          # Startup monitor (runs once on boot)
-├── register.py         # Service registration tool
-├── script.sh           # Launcher script
-├── install.sh          # Interactive installer script
-├── uninstall.sh        # Uninstallation script
-└── README.md           # This file
+├── .env_sample           # Sample environment configuration
+├── .env                  # Environment configuration
+├── config.py             # Configuration loader and utilities
+├── notice.py             # Termination monitor (runs continuously)
+├── restart.py            # Startup monitor (runs once on boot)
+├── register.py           # Service registration tool
+├── script.sh             # Default launcher script
+├── user_script.sh        # Your custom restart commands (created from template)
+├── user_script.sh.template # Template with examples for custom commands
+├── install.sh            # Interactive installer script
+├── uninstall.sh          # Uninstallation script
+└── README.md             # This file
 ```
 
 ## Verification
