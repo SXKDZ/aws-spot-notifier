@@ -1,12 +1,11 @@
 #!/bin/bash
 
 # AWS Spot Instance Email Notification System - Interactive Installer
-# Run with: curl -sSL https://raw.githubusercontent.com/SXKDZ/aws-spot-notifier/main/install.sh | bash
+# Run with: bash -c "$(curl -sSL https://raw.githubusercontent.com/SXKDZ/aws-spot-notifier/main/install.sh)"
+
+{ # this ensures the entire script is downloaded before execution
 
 set -e
-
-# When piped through curl|bash, stdin is the script content.
-# Each interactive `read` must individually read from /dev/tty.
 
 # Colors for output
 RED='\033[0;31m'
@@ -341,3 +340,5 @@ main() {
 
 # Run main function
 main "$@"
+
+} # this ensures the entire script is downloaded before execution
