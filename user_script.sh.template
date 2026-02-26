@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+# ============================================================================
+# USER CUSTOM RESTART SCRIPT
+# ============================================================================
+# This script runs automatically when your spot instance restarts.
+# Add your custom commands here to resume work after spot termination.
+#
+# To enable:
+#   1. Copy this file to user_script.sh
+#   2. Add your commands below
+#   3. Make it executable: chmod +x user_script.sh
+#   4. Update .env to set: SCRIPT_TO_RUN=/opt/aws-spot-notifier/user_script.sh
+#
+# Examples of what you might want to add:
+# ============================================================================
+
+# Mount additional volumes
+# sudo mount /dev/xvdf1 /mnt/data
+
+# Start your ML training
+# cd /home/ec2-user/my-project
+# screen -dmS training python train.py --resume-from-checkpoint
+
+# Resume Jupyter notebook
+# cd /home/ec2-user/notebooks
+# nohup jupyter lab --ip=0.0.0.0 --port=8888 &
+
+# Start Docker containers
+# docker start my-container
+
+# Pull latest code
+# cd /home/ec2-user/my-repo
+# git pull
+
+# Notify Slack/Discord
+# curl -X POST -H 'Content-type: application/json' \
+#   --data '{"text":"Instance restarted: '"$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)"'"}' \
+#   YOUR_WEBHOOK_URL
+
+# ============================================================================
+# DEFAULT: Start the spot termination monitor (keep this!)
+# ============================================================================
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+screen -dmS notice_monitor python3 "$SCRIPT_DIR/notice.py"
+
+# ============================================================================
+# ADD YOUR CUSTOM COMMANDS BELOW
+# ============================================================================
+
+echo "User script completed at $(date)"

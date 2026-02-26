@@ -167,6 +167,13 @@ setup_application() {
     sudo chown -R "$(whoami):$(whoami)" "$APP_DIR"
 
     print_success "Application files ready"
+
+    # Create user script template if it doesn't exist
+    if [ ! -f "$APP_DIR/user_script.sh" ] && [ -f "$APP_DIR/user_script.sh.template" ]; then
+        cp "$APP_DIR/user_script.sh.template" "$APP_DIR/user_script.sh"
+        chmod +x "$APP_DIR/user_script.sh"
+        print_info "Created user_script.sh for custom restart commands"
+    fi
 }
 
 configure_environment() {
@@ -318,11 +325,17 @@ print_completion() {
     echo "  • Edit configuration:       vi $APP_DIR/.env"
     echo "  • Uninstall:                $APP_DIR/uninstall.sh"
     echo
+    echo -e "${YELLOW}🔧 Customize Restart Actions:${NC}"
+    echo "  • Edit $APP_DIR/user_script.sh to add commands that run after restart"
+    echo "  • Examples: resume ML training, mount volumes, start services"
+    echo "  • Template with examples provided in the file"
+    echo
     echo -e "${YELLOW}What happens next:${NC}"
     echo "  1. The system is now monitoring for spot termination notices"
     echo "  2. You'll receive an email when a termination notice is detected"
     echo "  3. After instance restart, you'll get an email with new IP addresses"
-    echo "  4. The monitoring will automatically resume after each restart"
+    echo "  4. Your custom commands (if configured) will run automatically"
+    echo "  5. The monitoring will automatically resume after each restart"
     echo
     echo -e "${BLUE}Documentation:${NC} https://github.com/SXKDZ/aws-spot-notifier"
     echo
