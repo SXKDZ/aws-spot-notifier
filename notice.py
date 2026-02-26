@@ -63,8 +63,8 @@ def check_for_termination_notice(token):
         return None
 
 
-def send_termination_email(token, termination_time):
-    """Send email notification about the spot instance termination."""
+def send_termination_email(token, termination_time, max_retries=3, retry_delay=5):
+    """Send email notification about the spot instance termination with retry logic."""
 
     # Get instance information
     instance_id = get_instance_metadata(token, INSTANCE_ID_URL)
@@ -96,34 +96,52 @@ Please take any necessary actions to save data or migrate services.
 This is an automated message from the Spot Termination Monitor.
     """
 
-    # Create message container
-    message = MIMEMultipart()
-    message["From"] = SENDER_EMAIL
-    message["Subject"] = subject
+    # Track which recipients succeeded
+    failed_recipients = []
 
-    # Attach body
-    message.attach(MIMEText(body, "plain"))
+    # Send emails to all recipients with retry logic
+    for idx, recipient_email in enumerate(RECIPIENT_EMAILS):
+        email_sent = False
 
-    try:
-        # Send emails to all recipients
-        for idx, recipient_email in enumerate(RECIPIENT_EMAILS):
-            msg_copy = MIMEMultipart()
-            msg_copy["From"] = SENDER_EMAIL
-            msg_copy["To"] = recipient_email
-            msg_copy["Subject"] = subject
-            msg_copy.attach(MIMEText(body, "plain"))
+        for attempt in range(max_retries):
+            try:
+                msg_copy = MIMEMultipart()
+                msg_copy["From"] = SENDER_EMAIL
+                msg_copy["To"] = recipient_email
+                msg_copy["Subject"] = subject
+                msg_copy.attach(MIMEText(body, "plain"))
 
-            with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-                server.starttls()
-                server.login(SENDER_EMAIL, SENDER_PASSWORD)
-                server.send_message(msg_copy)
+                with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=30) as server:
+                    server.starttls()
+                    server.login(SENDER_EMAIL, SENDER_PASSWORD)
+                    server.send_message(msg_copy)
 
-            logger.info(f"[{idx + 1}] Termination email sent to {recipient_email}")
+                logger.info(f"[{idx + 1}] Termination email sent to {recipient_email}")
+                email_sent = True
+                break  # Success, no need to retry
 
-        return True
-    except Exception as e:
-        logger.error(f"Failed to send termination email: {e}")
-        return False
+            except smtplib.SMTPServerDisconnected as e:
+                logger.warning(f"SMTP connection lost for {recipient_email} (attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+            except smtplib.SMTPAuthenticationError as e:
+                logger.error(f"SMTP authentication failed for {recipient_email}: {e}")
+                break  # No point retrying auth errors
+            except Exception as e:
+                logger.warning(f"Failed to send email to {recipient_email} (attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+
+        if not email_sent:
+            failed_recipients.append(recipient_email)
+            logger.error(f"Failed to send termination email to {recipient_email} after {max_retries} attempts")
+
+    # Return True if at least one email was sent successfully
+    success = len(failed_recipients) < len(RECIPIENT_EMAILS)
+    if failed_recipients:
+        logger.warning(f"Failed to send emails to: {', '.join(failed_recipients)}")
+
+    return success
 
 
 def handle_termination(token, termination_time):

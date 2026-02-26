@@ -8,6 +8,7 @@ from email.mime.multipart import MIMEMultipart
 import socket
 import subprocess
 import datetime
+from time import sleep
 from config import (
     SMTP_SERVER,
     SMTP_PORT,
@@ -38,8 +39,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def send_startup_email(instance_info):
-    """Send email notification about the spot instance startup."""
+def send_startup_email(instance_info, max_retries=3, retry_delay=5):
+    """Send email notification about the spot instance startup with retry logic."""
     if not SENDER_EMAIL or not SENDER_PASSWORD:
         logger.error("Email configuration missing. Cannot send notification.")
         return False
@@ -67,26 +68,52 @@ The system is now online with the new IP addresses listed above.
 This is an automated message from the Spot Instance Startup Monitor.
     """
 
-    try:
-        # Send emails to all recipients
-        for idx, recipient_email in enumerate(RECIPIENT_EMAILS):
-            message = MIMEMultipart()
-            message["From"] = SENDER_EMAIL
-            message["To"] = recipient_email
-            message["Subject"] = subject
-            message.attach(MIMEText(body, "plain"))
+    # Track which recipients succeeded
+    failed_recipients = []
 
-            with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-                server.starttls()
-                server.login(SENDER_EMAIL, SENDER_PASSWORD)
-                server.send_message(message)
+    # Send emails to all recipients with retry logic
+    for idx, recipient_email in enumerate(RECIPIENT_EMAILS):
+        email_sent = False
 
-            logger.info(f"[{idx + 1}] Startup email sent to {recipient_email}")
+        for attempt in range(max_retries):
+            try:
+                message = MIMEMultipart()
+                message["From"] = SENDER_EMAIL
+                message["To"] = recipient_email
+                message["Subject"] = subject
+                message.attach(MIMEText(body, "plain"))
 
-        return True
-    except Exception as e:
-        logger.error(f"Failed to send startup email: {e}")
-        return False
+                with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=30) as server:
+                    server.starttls()
+                    server.login(SENDER_EMAIL, SENDER_PASSWORD)
+                    server.send_message(message)
+
+                logger.info(f"[{idx + 1}] Startup email sent to {recipient_email}")
+                email_sent = True
+                break  # Success, no need to retry
+
+            except smtplib.SMTPServerDisconnected as e:
+                logger.warning(f"SMTP connection lost for {recipient_email} (attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    sleep(retry_delay)
+            except smtplib.SMTPAuthenticationError as e:
+                logger.error(f"SMTP authentication failed for {recipient_email}: {e}")
+                break  # No point retrying auth errors
+            except Exception as e:
+                logger.warning(f"Failed to send email to {recipient_email} (attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    sleep(retry_delay)
+
+        if not email_sent:
+            failed_recipients.append(recipient_email)
+            logger.error(f"Failed to send startup email to {recipient_email} after {max_retries} attempts")
+
+    # Return True if at least one email was sent successfully
+    success = len(failed_recipients) < len(RECIPIENT_EMAILS)
+    if failed_recipients:
+        logger.warning(f"Failed to send emails to: {', '.join(failed_recipients)}")
+
+    return success
 
 
 def run_custom_script():
@@ -95,18 +122,26 @@ def run_custom_script():
         logger.error(f"Custom script not found at {SCRIPT_TO_RUN}")
         return False
 
+    # Validate that the script is executable
+    if not os.access(SCRIPT_TO_RUN, os.X_OK):
+        logger.warning(f"Script is not executable, attempting to make it executable: {SCRIPT_TO_RUN}")
+        try:
+            os.chmod(SCRIPT_TO_RUN, 0o755)
+        except Exception as e:
+            logger.error(f"Failed to make script executable: {e}")
+            return False
+
     try:
         logger.info(f"Running custom script as detached process: {SCRIPT_TO_RUN}")
 
-        # Use Popen instead of run to avoid waiting for completion
-        # DEVNULL redirects stdout and stderr to /dev/null
-        # The preexec_fn=os.setsid creates a new process group
+        # Use Popen without shell=True for security
+        # Pass the script directly as an executable
         process = subprocess.Popen(
             [SCRIPT_TO_RUN],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             preexec_fn=os.setsid,  # Creates a new process group
-            shell=True,  # Use shell to interpret the script
+            # Removed shell=True for security - script must be executable
         )
 
         # Don't wait for the process to complete

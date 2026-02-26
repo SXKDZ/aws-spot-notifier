@@ -1,0 +1,334 @@
+#!/bin/bash
+
+# AWS Spot Instance Email Notification System - Interactive Installer
+# Run with: curl -sSL https://raw.githubusercontent.com/SXKDZ/aws-spot-notifier/main/install.sh | bash
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Default values
+DEFAULT_APP_DIR="/opt/aws-spot-notifier"
+DEFAULT_SMTP_PORT="587"
+DEFAULT_CHECK_INTERVAL="5"
+DEFAULT_TOKEN_TTL="21600"
+GITHUB_REPO="https://github.com/SXKDZ/aws-spot-notifier.git"
+
+# Functions
+print_header() {
+    echo -e "${BLUE}╔════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║      AWS Spot Instance Email Notification System Installer     ║${NC}"
+    echo -e "${BLUE}╚════════════════════════════════════════════════════════════════╝${NC}"
+    echo
+}
+
+print_success() {
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}✗${NC} $1"
+}
+
+print_info() {
+    echo -e "${YELLOW}ℹ${NC} $1"
+}
+
+prompt_with_default() {
+    local prompt="$1"
+    local default="$2"
+    local var_name="$3"
+
+    echo -ne "${BLUE}?${NC} $prompt [$default]: "
+    read -r response
+    if [ -z "$response" ]; then
+        eval "$var_name='$default'"
+    else
+        eval "$var_name='$response'"
+    fi
+}
+
+prompt_password() {
+    local prompt="$1"
+    local var_name="$2"
+
+    echo -ne "${BLUE}?${NC} $prompt: "
+    read -rs response
+    echo
+    eval "$var_name='$response'"
+}
+
+detect_os() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        OS=$ID
+        OS_FAMILY=$ID_LIKE
+    else
+        print_error "Cannot detect operating system"
+        exit 1
+    fi
+}
+
+install_dependencies() {
+    print_info "Installing system dependencies..."
+
+    if [[ "$OS_FAMILY" == *"rhel"* ]] || [[ "$OS" == "amzn" ]]; then
+        sudo yum update -y >/dev/null 2>&1
+        sudo yum install -y git screen python3 python3-pip >/dev/null 2>&1
+    elif [[ "$OS" == "ubuntu" ]] || [[ "$OS" == "debian" ]]; then
+        sudo apt-get update -y >/dev/null 2>&1
+        sudo apt-get install -y git screen python3 python3-pip >/dev/null 2>&1
+    else
+        print_error "Unsupported OS: $OS"
+        exit 1
+    fi
+
+    print_success "System dependencies installed"
+}
+
+check_aws_instance() {
+    print_info "Checking if running on AWS EC2..."
+
+    if curl -s -m 2 http://169.254.169.254/latest/meta-data/ >/dev/null 2>&1; then
+        INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+        INSTANCE_TYPE=$(curl -s http://169.254.169.254/latest/meta-data/instance-type)
+        print_success "Running on AWS EC2 instance: $INSTANCE_ID ($INSTANCE_TYPE)"
+
+        # Check if it's a spot instance
+        if curl -s http://169.254.169.254/latest/meta-data/spot/ >/dev/null 2>&1; then
+            print_success "This is a Spot instance - perfect!"
+        else
+            print_info "This is not a Spot instance - notifications will only work on Spot instances"
+        fi
+    else
+        print_info "Not running on AWS EC2 - assuming local testing environment"
+    fi
+}
+
+setup_application() {
+    print_info "Setting up application directory..."
+
+    # Create directory if it doesn't exist
+    if [ ! -d "$APP_DIR" ]; then
+        sudo mkdir -p "$APP_DIR"
+    fi
+
+    # Clone or download the repository
+    if [ -d "$APP_DIR/.git" ]; then
+        print_info "Repository already exists, pulling latest changes..."
+        cd "$APP_DIR"
+        sudo git pull origin main >/dev/null 2>&1
+    else
+        print_info "Cloning repository..."
+        sudo git clone "$GITHUB_REPO" "$APP_DIR" >/dev/null 2>&1
+    fi
+
+    # Set proper ownership
+    sudo chown -R $(whoami):$(whoami) "$APP_DIR"
+
+    print_success "Application files ready"
+}
+
+configure_environment() {
+    print_header
+    echo -e "${GREEN}Configuration Setup${NC}"
+    echo "═══════════════════════════════════════════════════════════════"
+    echo
+
+    # SMTP Configuration
+    echo -e "${YELLOW}Email Server Configuration:${NC}"
+    prompt_with_default "SMTP Server (e.g., smtp.gmail.com)" "smtp.gmail.com" SMTP_SERVER
+    prompt_with_default "SMTP Port" "$DEFAULT_SMTP_PORT" SMTP_PORT
+    prompt_with_default "Sender Email" "" SENDER_EMAIL
+
+    while [ -z "$SENDER_EMAIL" ]; do
+        print_error "Sender email is required"
+        prompt_with_default "Sender Email" "" SENDER_EMAIL
+    done
+
+    prompt_password "Sender Password (or App Password for Gmail)" SENDER_PASSWORD
+
+    while [ -z "$SENDER_PASSWORD" ]; do
+        print_error "Password is required"
+        prompt_password "Sender Password (or App Password for Gmail)" SENDER_PASSWORD
+    done
+
+    echo
+    echo -e "${YELLOW}Notification Recipients:${NC}"
+    prompt_with_default "Recipient Emails (comma-separated)" "$SENDER_EMAIL" RECIPIENT_EMAILS
+
+    echo
+    echo -e "${YELLOW}Monitoring Configuration:${NC}"
+    prompt_with_default "Check Interval (seconds)" "$DEFAULT_CHECK_INTERVAL" CHECK_INTERVAL
+    prompt_with_default "Token TTL (seconds)" "$DEFAULT_TOKEN_TTL" TOKEN_TTL_SECONDS
+
+    # Write .env file
+    cat > "$APP_DIR/.env" << EOF
+# Email configuration
+SMTP_SERVER=$SMTP_SERVER
+SMTP_PORT=$SMTP_PORT
+SENDER_EMAIL=$SENDER_EMAIL
+SENDER_PASSWORD=$SENDER_PASSWORD
+RECIPIENT_EMAILS=$RECIPIENT_EMAILS
+
+# Monitoring configuration
+TOKEN_TTL_SECONDS=$TOKEN_TTL_SECONDS
+CHECK_INTERVAL=$CHECK_INTERVAL
+
+# Paths
+SCRIPT_TO_RUN=$APP_DIR/script.sh
+LOG_DIR=/var/log
+EOF
+
+    chmod 600 "$APP_DIR/.env"
+    print_success "Configuration saved to $APP_DIR/.env"
+}
+
+install_python_deps() {
+    print_info "Installing Python dependencies..."
+
+    cd "$APP_DIR"
+    pip3 install -r requirements.txt >/dev/null 2>&1
+
+    print_success "Python dependencies installed"
+}
+
+setup_service() {
+    print_info "Setting up systemd service..."
+
+    cd "$APP_DIR"
+    chmod +x "$APP_DIR/script.sh"
+
+    # Register the service
+    python3 register.py register --script-path "$APP_DIR/restart.py" >/dev/null 2>&1
+
+    # Enable and start the service
+    sudo systemctl enable spot-startup >/dev/null 2>&1
+    sudo systemctl start spot-startup >/dev/null 2>&1
+
+    print_success "Systemd service configured and started"
+}
+
+test_setup() {
+    print_header
+    echo -e "${GREEN}Testing Installation${NC}"
+    echo "═══════════════════════════════════════════════════════════════"
+    echo
+
+    # Test email configuration
+    print_info "Testing email configuration..."
+    python3 -c "
+import smtplib
+from email.mime.text import MIMEText
+import os
+from dotenv import load_dotenv
+
+load_dotenv('$APP_DIR/.env')
+
+try:
+    server = smtplib.SMTP(os.getenv('SMTP_SERVER'), int(os.getenv('SMTP_PORT')))
+    server.starttls()
+    server.login(os.getenv('SENDER_EMAIL'), os.getenv('SENDER_PASSWORD'))
+    server.quit()
+    print('Email configuration is valid')
+    exit(0)
+except Exception as e:
+    print(f'Email configuration error: {e}')
+    exit(1)
+" && print_success "Email configuration verified" || print_error "Email configuration failed - please check credentials"
+
+    # Check if monitoring is running
+    sleep 2
+    if screen -ls | grep -q notice_monitor; then
+        print_success "Monitoring process is running"
+    else
+        print_info "Starting monitoring process..."
+        "$APP_DIR/script.sh" >/dev/null 2>&1
+        sleep 2
+        if screen -ls | grep -q notice_monitor; then
+            print_success "Monitoring process started successfully"
+        else
+            print_error "Failed to start monitoring process"
+        fi
+    fi
+
+    # Check service status
+    if systemctl is-active spot-startup >/dev/null 2>&1; then
+        print_success "Systemd service is active"
+    else
+        print_error "Systemd service is not active"
+    fi
+}
+
+print_completion() {
+    print_header
+    echo -e "${GREEN}Installation Complete!${NC}"
+    echo "═══════════════════════════════════════════════════════════════"
+    echo
+    echo -e "${GREEN}✓${NC} AWS Spot Instance Notification System has been installed successfully!"
+    echo
+    echo -e "${YELLOW}Important Commands:${NC}"
+    echo "  • Check service status:    python3 $APP_DIR/register.py status"
+    echo "  • View monitor logs:        screen -r notice_monitor"
+    echo "  • Check startup logs:       sudo journalctl -u spot-startup -n 50"
+    echo "  • Edit configuration:       vi $APP_DIR/.env"
+    echo "  • Uninstall:               $APP_DIR/uninstall.sh"
+    echo
+    echo -e "${YELLOW}What happens next:${NC}"
+    echo "  1. The system is now monitoring for spot termination notices"
+    echo "  2. You'll receive an email when a termination notice is detected"
+    echo "  3. After instance restart, you'll get an email with new IP addresses"
+    echo "  4. The monitoring will automatically resume after each restart"
+    echo
+    echo -e "${BLUE}Documentation:${NC} https://github.com/SXKDZ/aws-spot-notifier"
+    echo
+}
+
+main() {
+    clear
+    print_header
+
+    # Check if running as root
+    if [ "$EUID" -eq 0 ]; then
+        print_error "Please do not run this installer as root"
+        exit 1
+    fi
+
+    echo "This installer will set up the AWS Spot Instance Email Notification System"
+    echo "on your EC2 instance. It will:"
+    echo "  • Install required dependencies (screen, python3)"
+    echo "  • Configure email notifications"
+    echo "  • Set up automatic monitoring"
+    echo "  • Register a systemd service for auto-start"
+    echo
+
+    echo -ne "${BLUE}?${NC} Continue with installation? [Y/n]: "
+    read -r CONTINUE
+    if [[ "$CONTINUE" =~ ^[Nn]$ ]]; then
+        echo "Installation cancelled."
+        exit 0
+    fi
+
+    echo
+    detect_os
+    check_aws_instance
+
+    echo
+    prompt_with_default "Installation directory" "$DEFAULT_APP_DIR" APP_DIR
+
+    install_dependencies
+    setup_application
+    configure_environment
+    install_python_deps
+    setup_service
+    test_setup
+    print_completion
+}
+
+# Run main function
+main "$@"
