@@ -154,19 +154,19 @@ setup_application() {
     fi
 
     # Clone or download the repository
+    # Use sudo only for initial creation, then fix ownership so git runs as ec2-user
     if [ -d "$APP_DIR/.git" ]; then
         print_info "Repository already exists, pulling latest changes..."
         cd "$APP_DIR"
-        sudo git pull origin main >/dev/null 2>&1
+        sudo chown -R "$(whoami):$(whoami)" "$APP_DIR"
+        git pull origin main >/dev/null 2>&1
     else
         print_info "Cloning repository..."
         sudo git clone "$GITHUB_REPO" "$APP_DIR" >/dev/null 2>&1
+        sudo chown -R "$(whoami):$(whoami)" "$APP_DIR"
     fi
 
-    # Set proper ownership
-    sudo chown -R "$(whoami):$(whoami)" "$APP_DIR"
-
-    print_success "Application files ready"
+    print_success "Application files ready (owned by $(whoami))"
 }
 
 configure_environment() {
@@ -254,6 +254,11 @@ setup_service() {
     sudo systemctl enable spot-startup >/dev/null 2>&1
     sudo systemctl start spot-startup >/dev/null 2>&1
 
+    # Ensure app dir stays owned by the installing user (not root)
+    # This is important: user_script.sh must be owned by ec2-user so that
+    # restart.py runs it as ec2-user (with the user's full environment)
+    sudo chown -R "$(whoami):$(whoami)" "$APP_DIR"
+
     print_success "Systemd service configured and started"
 }
 
@@ -323,6 +328,7 @@ print_completion() {
     echo "  • Edit the script:    vi $APP_DIR/user_script.sh"
     echo "  • Add your commands to resume work after restart (e.g., ML training)"
     echo "  • script.sh handles monitoring — user_script.sh is for your commands only"
+    echo "  • user_script.sh runs as its file owner ($(whoami)), not root"
     echo
     echo -e "${YELLOW}What happens next:${NC}"
     echo "  1. The system is now monitoring for spot termination notices"
