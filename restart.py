@@ -1,6 +1,7 @@
 import time
 import logging
 import os
+import pwd
 import sys
 import socket
 import subprocess
@@ -57,8 +58,14 @@ This is an automated message from the Spot Instance Startup Monitor.
     return send_email(subject, body)
 
 
-def run_script(script_path, label="script"):
-    """Run a script as a detached process."""
+def run_script(script_path, label="script", run_as_owner=False):
+    """Run a script as a detached process.
+
+    If run_as_owner is True, the script is executed as the file owner
+    using 'sudo -i -u <owner>' so that the owner's login environment
+    (conda, CUDA, etc.) is loaded.  This is needed because systemd
+    launches us as root, but user scripts expect the normal user env.
+    """
     if not os.path.exists(script_path):
         logger.info(f"{label} not found at {script_path}, skipping")
         return False
@@ -71,10 +78,21 @@ def run_script(script_path, label="script"):
             logger.error(f"Failed to make {label} executable: {e}")
             return False
 
-    try:
+    cmd = [script_path]
+    if run_as_owner:
+        owner_uid = os.stat(script_path).st_uid
+        owner_name = pwd.getpwuid(owner_uid).pw_name
+        if owner_name != "root":
+            cmd = ["sudo", "-i", "-u", owner_name, script_path]
+            logger.info(f"Running {label} as user '{owner_name}': {script_path}")
+        else:
+            logger.info(f"Running {label}: {script_path}")
+    else:
         logger.info(f"Running {label}: {script_path}")
+
+    try:
         process = subprocess.Popen(
-            [script_path],
+            cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             preexec_fn=os.setsid,
@@ -129,7 +147,7 @@ def main():
     app_dir = os.path.dirname(os.path.abspath(__file__))
     user_script = os.path.join(app_dir, "user_script.sh")
     if os.path.exists(user_script):
-        if not run_script(user_script, "user script"):
+        if not run_script(user_script, "user script", run_as_owner=True):
             logger.warning("User script execution failed")
 
     logger.info("Spot instance startup processing complete")
