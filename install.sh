@@ -286,15 +286,15 @@ except Exception as e:
     sys.exit(1)
 " && print_success "Email configuration verified" || print_error "Email configuration failed - please check credentials"
 
-    # Check if monitoring is running
+    # Check if monitoring is running (screen runs under root via systemd)
     sleep 2
-    if screen -ls | grep -q notice_monitor; then
+    if sudo screen -ls | grep -q notice_monitor; then
         print_success "Monitoring process is running"
     else
         print_info "Starting monitoring process..."
-        "$APP_DIR/script.sh" >/dev/null 2>&1
+        sudo "$APP_DIR/script.sh" >/dev/null 2>&1
         sleep 2
-        if screen -ls | grep -q notice_monitor; then
+        if sudo screen -ls | grep -q notice_monitor; then
             print_success "Monitoring process started successfully"
         else
             print_error "Failed to start monitoring process"
@@ -318,7 +318,7 @@ print_completion() {
     echo
     echo -e "${YELLOW}Important Commands:${NC}"
     echo "  • Check service status:     python3 $APP_DIR/register.py status"
-    echo "  • View monitor logs:        screen -r notice_monitor"
+    echo "  • View monitor logs:        sudo screen -r notice_monitor"
     echo "  • Check startup logs:       sudo journalctl -u spot-startup -n 50"
     echo "  • Edit configuration:       vi $APP_DIR/.env"
     echo "  • Uninstall:                $APP_DIR/uninstall.sh"
@@ -331,8 +331,8 @@ print_completion() {
     echo "  • user_script.sh runs as its file owner ($(whoami)), not root"
     echo
     echo -e "${YELLOW}What happens next:${NC}"
-    echo "  1. The system is now monitoring for spot termination notices"
-    echo "  2. You'll receive an email when a termination notice is detected"
+    echo "  1. The system is now monitoring for spot interruption notices"
+    echo "  2. You'll receive an email when an interruption notice is detected"
     echo "  3. After instance restart, you'll get an email with new IP addresses"
     echo "  4. script.sh resumes monitoring automatically"
     echo "  5. user_script.sh runs your custom commands (if configured)"
