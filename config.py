@@ -27,7 +27,7 @@ RECIPIENT_EMAILS = [
 
 # AWS IMDS URLs
 METADATA_TOKEN_URL = "http://169.254.169.254/latest/api/token"
-METADATA_SPOT_URL = "http://169.254.169.254/latest/meta-data/spot/termination-time"
+METADATA_SPOT_URL = "http://169.254.169.254/latest/meta-data/spot/instance-action"
 INSTANCE_ID_URL = "http://169.254.169.254/latest/meta-data/instance-id"
 INSTANCE_TYPE_URL = "http://169.254.169.254/latest/meta-data/instance-type"
 PUBLIC_IP_URL = "http://169.254.169.254/latest/meta-data/public-ipv4"
