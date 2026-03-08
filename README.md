@@ -1,6 +1,6 @@
 # AWS Spot Instance Email Notification System
 
-Automated email notifications for spot instance termination and restart events.
+Automated email notifications for spot instance interruption (stop/terminate/hibernate) and restart events.
 
 ## 🚀 Quick Start - One Line Installation
 
@@ -14,7 +14,7 @@ This interactive installer will guide you through the entire setup process.
 
 ## Features
 
-- **Termination Alerts**: Sends email when AWS issues spot termination notice (2-minute warning)
+- **Interruption Alerts**: Sends email when AWS issues spot interruption notice (stop, terminate, or hibernate)
 - **Restart Notifications**: Sends email when instance restarts with new IP addresses
 - **Custom Restart Scripts**: Automatically run your commands after restart (resume training, mount drives, etc.)
 - **Auto-Recovery**: Automatically restarts monitoring after each instance reboot
@@ -185,19 +185,19 @@ python3 register.py status
 ### 8. Test the Setup
 
 ```bash
-# Test the termination monitor manually
+# Test the interruption monitor manually
 python3 $APP_DIR/notice.py
 # Press Ctrl+C to stop after verifying it starts successfully
 
-# Test the script.sh
-$APP_DIR/script.sh
+# Test the script.sh (runs as root since systemd launches it as root)
+sudo $APP_DIR/script.sh
 
-# Verify it's running in screen
-screen -ls
+# Verify it's running in screen (notice_monitor runs under root)
+sudo screen -ls
 # Should show: notice_monitor
 
 # Attach to view logs (optional)
-screen -r notice_monitor
+sudo screen -r notice_monitor
 # Detach with: Ctrl+A then D
 ```
 
@@ -232,13 +232,13 @@ screen -r notice_monitor
    - Executes your custom restart commands (if configured)
    - Launches `script.sh`
 
-2. **script.sh**:
-   - Starts `notice.py` in a detached screen session
-   - Keeps termination monitor running in background
+2. **script.sh** (runs as root):
+   - Starts `notice.py` in a detached screen session under root
+   - Keeps interruption monitor running in background
 
 3. **During Runtime**:
-   - `notice.py` continuously monitors AWS metadata API
-   - Sends termination email if spot termination notice detected
+   - `notice.py` polls the `spot/instance-action` IMDS endpoint every 5 seconds
+   - Sends interruption email when a spot interruption notice is detected (stop, terminate, or hibernate)
 
 4. **Cycle Repeats**:
    - After instance restart, the process begins again automatically
@@ -254,7 +254,7 @@ The system can automatically run your custom commands after each spot instance r
 
 ### How It's Organized
 
-- **`script.sh`** — Starts the termination monitor (`notice_monitor`). Runs automatically. **Do not modify.**
+- **`script.sh`** — Starts the interruption monitor (`notice_monitor`) under root. Runs automatically. **Do not modify.**
 - **`user_script.sh`** — Your custom commands. Runs automatically if the file exists. **Edit this one.**
 
 Both scripts run on restart. `script.sh` handles monitoring; `user_script.sh` handles your work.
@@ -283,7 +283,7 @@ screen -dmS train bash -c 'KL_COEF=0.00 bash slime_retro/scripts/train.sh'
 
 That's it. On restart, the system will automatically:
 1. Send you an email with new IP addresses
-2. Start the termination monitor (`script.sh`)
+2. Start the interruption monitor (`script.sh`)
 3. Run your custom commands (`user_script.sh`)
 
 ## File Structure
@@ -293,10 +293,10 @@ $APP_DIR/
 ├── .env_sample           # Sample environment configuration
 ├── .env                  # Environment configuration
 ├── config.py             # Configuration loader and utilities
-├── notice.py             # Termination monitor (runs continuously)
-├── restart.py            # Startup monitor (runs once on boot)
+├── notice.py             # Interruption monitor (runs continuously under root)
+├── restart.py            # Startup monitor (runs once on boot as root)
 ├── register.py           # Service registration tool
-├── script.sh             # Starts termination monitor (do not modify)
+├── script.sh             # Starts interruption monitor (do not modify)
 ├── user_script.sh        # Your custom restart commands (create from template)
 ├── user_script.sh.template # Template with examples for custom commands
 ├── install.sh            # Interactive installer script
@@ -313,14 +313,18 @@ python3 $APP_DIR/register.py status
 
 ### Check if Monitor is Running
 ```bash
-screen -ls | grep notice_monitor
+# notice_monitor runs under root
+sudo screen -ls | grep notice_monitor
 ps aux | grep notice.py
 ```
 
 ### View Monitor Logs
 ```bash
-screen -r notice_monitor
+sudo screen -r notice_monitor
 # Detach with: Ctrl+A then D
+
+# Or check the log file
+sudo tail -f /var/log/spot_termination_monitor.log
 ```
 
 ### Check Startup Logs
@@ -335,8 +339,8 @@ sudo journalctl -u spot-startup -n 50
 # Check if startup service ran
 sudo journalctl -u spot-startup -n 50
 
-# Manually start the monitor
-$APP_DIR/script.sh
+# Manually start the monitor (must run as root)
+sudo $APP_DIR/script.sh
 ```
 
 ### Email not sending
@@ -393,12 +397,14 @@ sudo systemctl restart spot-startup
 - Run the installer in a `screen` or `tmux` session to prevent disconnection issues
 - Keep a backup of your `.env` file: `cp /opt/aws-spot-notifier/.env ~/spot-notifier-env-backup`
 - For production use, consider using AWS SES for better deliverability
-- The system only monitors for termination on actual Spot instances, not On-Demand instances
+- The system only monitors for interruption on actual Spot instances, not On-Demand instances
 - Test your setup periodically to ensure emails are being delivered
 
 ## Notes
 
 - This system only activates for spot instances (not on-demand)
-- Termination notices typically provide 2 minutes warning
+- Stop and terminate actions provide ~2 minutes warning; hibernate begins immediately
+- Interruption notices are emitted by AWS on a best-effort basis
+- The monitor runs under root (via systemd); user scripts run as ec2-user (file owner)
 - Email notifications require outbound SMTP access (port 587)
 - Gmail and Yahoo require App Passwords instead of regular passwords
